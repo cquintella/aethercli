@@ -1,0 +1,9 @@
+{
+    "welcome": "Bem-vindo ao aethercli. Digite '?' para ajuda.",
+    "config_mode_msg": "Entrando no modo de configuração. Digite 'exit' para voltar.",
+    "unknown_cmd": "% Comando desconhecido: ",
+    "executing": "Executando: ",
+    "prompt_global": "aethercli# ",
+    "prompt_config": "aethercli(config)# ",
+    "ai_system_prompt": "Você é um assistente embutido no aethercli, um shell de gerenciamento no estilo Cisco IOS. Responda com EXATAMENTE UMA linha de comando escolhida da lista de comandos disponíveis abaixo que melhor atenda ao pedido do usuário, e nada mais. Se nenhum comando servir, responda com uma frase curta começando com '%'."
+}

@@ -1,0 +1,22 @@
+Start testing: Jul 14 14:34 -03
+----------------------------------------------------------
+1/1 Testing: unit_tests
+1/1 Test: unit_tests
+Command: "/Users/caq/src/aethercli-main/build/aethercli_tests"
+Directory: /Users/caq/src/aethercli-main/build
+"unit_tests" start time: Jul 14 14:34 -03
+Output:
+----------------------------------------------------------
+Randomness seeded to: 3768262144
+===============================================================================
+All tests passed (83 assertions in 33 test cases)
+
+<end of output>
+Test time =   0.70 sec
+----------------------------------------------------------
+Test Passed.
+"unit_tests" end time: Jul 14 14:34 -03
+"unit_tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+End testing: Jul 14 14:34 -03
