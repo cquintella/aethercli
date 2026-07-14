@@ -1,7 +1,5 @@
 /*
  * Copyright (c) 2026 caq@intelliurb.com
- * PROPRIEDADE DA INTELLIURB - SOMENTE USO INTERNO
- * A cópia e o uso devem ser expressamente autorizados.
  */
 
 #pragma once
