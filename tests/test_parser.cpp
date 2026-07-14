@@ -64,7 +64,7 @@ TEST_CASE("parseConfig: configuração válida com hierarquia e args") {
 }
 
 TEST_CASE("parseConfig: arquivo inexistente lança erro") {
-    REQUIRE_THROWS(CommandParser::parseConfig("/nonexistent/path/commands.json"));
+    REQUIRE_THROWS(CommandParser::parseConfig("/nonexistent/path/config.json"));
 }
 
 TEST_CASE("parseConfig: JSON malformado lança erro") {

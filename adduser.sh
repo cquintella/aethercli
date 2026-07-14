@@ -1,51 +1,34 @@
 #!/bin/bash
-# Script para gerar um novo usuário e adicioná-lo ao arquivo de usuários
-# Formato: username:nome:e-mail:cripto
+# Cria/atualiza um usuário delegando ao `aethercli --adduser`, que grava
+# PBKDF2-HMAC-SHA256 (salt aleatório de 16 bytes + AETHERCLI_PEPPER opcional)
+# em users.json. A validação de username/senha é feita pelo próprio binário.
+# Uso: adduser.sh <users.json ou diretório> <username>
 
-if [ "$#" -ne 4 ]; then
-    echo "Uso: $0 <arquivo_de_usuarios> <username> <nome> <e-mail>"
+set -e
+
+if [ "$#" -ne 2 ]; then
+    echo "Uso: $0 <users.json (ou diretório de configuração)> <username>"
     exit 1
 fi
 
-FILE=$1
-USER=$2
-NOME=$3
-EMAIL=$4
+DEST=$1
+USERNAME=$2
 
-if [ ${#USER} -lt 1 ] || [ ${#USER} -gt 32 ]; then
-    echo "Erro: O username deve ter entre 1 e 32 caracteres (padrão Unix)."
+if [ -d "$DEST" ]; then
+    DIR=$DEST
+else
+    if [ "$(basename "$DEST")" != "users.json" ]; then
+        echo "Erro: o arquivo de usuários deve se chamar users.json (recebido: $DEST)."
+        exit 1
+    fi
+    DIR=$(dirname "$DEST")
+fi
+
+BIN=${AETHERCLI_BIN:-aethercli}
+if ! command -v "$BIN" >/dev/null 2>&1; then
+    echo "Erro: binário '$BIN' não encontrado no PATH (defina AETHERCLI_BIN)."
     exit 1
 fi
 
-# Validar caracteres padrão do Unix para username
-if ! [[ "$USER" =~ ^[a-z_][a-z0-9_-]*$ ]]; then
-    echo "Erro: O username contém caracteres inválidos (deve iniciar com letra minúscula ou sublinhado e conter apenas letras minúsculas, números, sublinhados ou traços)."
-    exit 1
-fi
-
-echo -n "Senha: "
-read -s PASS
-echo
-
-if [ ${#PASS} -lt 8 ] || [ ${#PASS} -gt 255 ]; then
-    echo "Erro: A senha deve ter entre 8 e 255 caracteres."
-    exit 1
-fi
-
-echo -n "Confirme a senha: "
-read -s PASS2
-echo
-
-if [ "$PASS" != "$PASS2" ]; then
-    echo "Erro: As senhas não conferem."
-    exit 1
-fi
-
-# Gera o hash SHA256 (incluindo o pepper se configurado no ambiente)
-# O formato de hash esperado no C++ é hexadecimal contínuo (64 caracteres)
-HASH=$(echo -n "${PASS}${AETHERCLI_PEPPER}" | sha256sum | awk '{print $1}')
-
-# Dá >> no arquivo
-echo "$USER:$NOME:$EMAIL:$HASH" >> "$FILE"
-
-echo "Usuário '$USER' adicionado com sucesso em '$FILE'."
+# --adduser grava em <dir do -C>/users.json; o config em si não é lido nesse modo.
+exec "$BIN" -C "$DIR/config.json" --adduser "$USERNAME"

@@ -3,6 +3,7 @@
  */
 #pragma once
 #include <array>
+#include <cerrno>
 #include <cstdint>
 #include <cstring>
 #include <csignal>
@@ -280,58 +281,27 @@ public:
             return {};
         }
 
-        int first = file.peek();
-        if (first == '{') {
-            nlohmann::json j;
-            try { file >> j; } catch (const nlohmann::json::parse_error&) { err = AuthError::UsersFileInvalid; return {}; }
-            if (!j.contains("users") || !j["users"].is_array()) { err = AuthError::UsersFileInvalid; return {}; }
-            std::vector<UserRecord> users;
-            for (const auto& u : j["users"]) {
-                if (!u.is_object() || !u.contains("username") || !u["username"].is_string() ||
-                    !u.contains("salt") || !u["salt"].is_string() || !u.contains("hash") || !u["hash"].is_string()) {
-                    err = AuthError::UsersFileInvalid; return {};
-                }
-                UserRecord r;
-                r.username = u["username"];
-                r.salt = fromHex(u["salt"]);
-                r.hash = fromHex(u["hash"]);
-                r.iterations = u.value("iterations", DEFAULT_ITERATIONS);
-                if (r.username.empty() || r.salt.empty() || r.hash.size() != 32 || r.iterations == 0) {
-                    err = AuthError::UsersFileInvalid; return {};
-                }
-                users.push_back(std::move(r));
+        nlohmann::json j;
+        try { file >> j; } catch (const nlohmann::json::parse_error&) { err = AuthError::UsersFileInvalid; return {}; }
+        if (!j.contains("users") || !j["users"].is_array()) { err = AuthError::UsersFileInvalid; return {}; }
+        std::vector<UserRecord> users;
+        for (const auto& u : j["users"]) {
+            if (!u.is_object() || !u.contains("username") || !u["username"].is_string() ||
+                !u.contains("salt") || !u["salt"].is_string() || !u.contains("hash") || !u["hash"].is_string()) {
+                err = AuthError::UsersFileInvalid; return {};
             }
-            if (users.empty()) err = AuthError::UsersFileInvalid;
-            return users;
-        } else {
-            std::vector<UserRecord> users;
-            std::string line;
-            while (std::getline(file, line)) {
-                if (line.empty() || line[0] == '#') continue;
-                size_t p1 = line.find(':');
-                if (p1 == std::string::npos) continue;
-                size_t p2 = line.find(':', p1 + 1);
-                if (p2 == std::string::npos) continue;
-                size_t p3 = line.find(':', p2 + 1);
-                if (p3 == std::string::npos) continue;
-
-                UserRecord r;
-                r.username = line.substr(0, p1);
-                std::string hash_hex = line.substr(p3 + 1);
-                if (!hash_hex.empty() && hash_hex.back() == '\r') {
-                    hash_hex.pop_back();
-                }
-
-                r.hash = fromHex(hash_hex);
-                r.iterations = 0; 
-                
-                if (!r.username.empty() && r.hash.size() == 32) {
-                    users.push_back(std::move(r));
-                }
+            UserRecord r;
+            r.username = u["username"];
+            r.salt = fromHex(u["salt"]);
+            r.hash = fromHex(u["hash"]);
+            r.iterations = u.value("iterations", DEFAULT_ITERATIONS);
+            if (r.username.empty() || r.salt.empty() || r.hash.size() != 32 || r.iterations == 0) {
+                err = AuthError::UsersFileInvalid; return {};
             }
-            if (users.empty()) err = AuthError::UsersFileInvalid;
-            return users;
+            users.push_back(std::move(r));
         }
+        if (users.empty()) err = AuthError::UsersFileInvalid;
+        return users;
     }
 
     static bool verify(const std::vector<UserRecord>& users, const std::string& username,
@@ -344,19 +314,15 @@ public:
             }
         }
         
+        // Usuário desconhecido: roda o PBKDF2 com salt/hash dummy mesmo assim,
+        // para não revelar por timing se o usuário existe.
         const std::vector<uint8_t> dummy_hash(32, 0x00);
+        const std::vector<uint8_t> dummy_salt(16, 0xAA);
         const std::vector<uint8_t>& hash = rec ? rec->hash : dummy_hash;
-        uint32_t iterations = rec ? rec->iterations : 0;
-        
-        std::array<uint8_t, 32> dk;
-        if (iterations > 0) {
-            const std::vector<uint8_t> dummy_salt(16, 0xAA);
-            const std::vector<uint8_t>& salt = rec ? rec->salt : dummy_salt;
-            dk = pbkdf2Sha256(password + pepper, salt, iterations);
-        } else {
-            dk = Sha256::hash(reinterpret_cast<const uint8_t*>((password + pepper).data()), password.size() + pepper.size());
-        }
-        
+        const std::vector<uint8_t>& salt = rec ? rec->salt : dummy_salt;
+        uint32_t iterations = rec ? rec->iterations : DEFAULT_ITERATIONS;
+
+        auto dk = pbkdf2Sha256(password + pepper, salt, iterations);
         bool ok = constantTimeEqual(dk.data(), dk.size(), hash.data(), hash.size());
         return rec != nullptr && ok;
     }
@@ -373,6 +339,25 @@ public:
         return r;
     }
 
+    // Lê uma linha direto do fd 0, byte a byte, sem buffer de iostream: o
+    // getline do cin lê blocos inteiros de um pipe, engolindo o input que o
+    // loop interativo (read() no fd) consumiria depois do login.
+    static bool readLineFd(std::string& out) {
+        out.clear();
+        for (;;) {
+            char c;
+            ssize_t n = ::read(STDIN_FILENO, &c, 1);
+            if (n == 1) {
+                if (c == '\n') return true;
+                out += c;
+            } else if (n == -1 && errno == EINTR) {
+                continue;
+            } else {
+                return !out.empty(); // EOF: última linha sem '\n' ainda vale
+            }
+        }
+    }
+
     // Lê uma linha com echo desligado (senha). Fora de TTY lê normalmente.
     static std::string readHiddenLine(const std::string& prompt) {
         std::cout << prompt << std::flush;
@@ -386,7 +371,7 @@ public:
             tcsetattr(STDIN_FILENO, TCSAFLUSH, &noecho);
         }
         std::string line;
-        std::getline(std::cin, line);
+        readLineFd(line);
         if (tty) {
             tcsetattr(STDIN_FILENO, TCSAFLUSH, &oldt);
             std::cout << std::endl; // o Enter não ecoou

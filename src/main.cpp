@@ -728,11 +728,18 @@ int main(int argc, char* argv[]) {
     }
 
     Config config;
-    try {
-        config = CommandParser::parseConfig(configFile);
-    } catch (const std::exception& e) {
-        std::cerr << e.what() << std::endl;
-        return 1;
+    if (!fs::exists(configFile)) {
+        // Config ausente não é fatal: avisa e abre o shell com árvore vazia,
+        // para o usuário poder digitar comandos (exit/?) e ver o aviso.
+        std::cerr << "% Warning: configuration file not found: " << configFile << std::endl;
+        std::cerr << "% Starting with an empty command set. Use -C <file> to load a configuration." << std::endl;
+    } else {
+        try {
+            config = CommandParser::parseConfig(configFile);
+        } catch (const std::exception& e) {
+            std::cerr << e.what() << std::endl;
+            return 1;
+        }
     }
 
     try {
@@ -759,7 +766,7 @@ int main(int argc, char* argv[]) {
             while (true) {
                 std::cout << "Username: " << std::flush;
                 std::string username;
-                if (!std::getline(std::cin, username)) {
+                if (!Auth::readLineFd(username)) {
                     std::cout << std::endl;
                     return 1; // EOF no stdin: sem como autenticar
                 }

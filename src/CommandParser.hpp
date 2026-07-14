@@ -73,6 +73,12 @@ public:
             config.number_auth_fail = n;
         }
 
+        if (j.contains("passwd-file")) {
+            const auto& v = j["passwd-file"];
+            if (!v.is_string()) throw std::runtime_error("Critical Error: 'passwd-file' must be a string in " + filePath);
+            config.passwd_file = v.get<std::string>();
+        }
+
         if (!j.contains("commands")) {
             throw std::runtime_error("Critical Error: Missing mandatory top-level field 'commands' in " + filePath);
         }

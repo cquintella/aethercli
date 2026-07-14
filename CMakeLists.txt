@@ -38,7 +38,9 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(json)
 
-# cpp-httplib for AI API
+# cpp-httplib for AI API (HTTPLIB_INSTALL OFF: dependência interna não deve
+# instalar headers/cmake em /usr/local junto com o aethercli)
+set(HTTPLIB_INSTALL OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(
   httplib
   URL https://github.com/yhirose/cpp-httplib/archive/refs/tags/v0.18.7.tar.gz
@@ -54,7 +56,7 @@ include(GNUInstallDirs)
 
 # Definir caminhos customizáveis
 set(AETHERCLI_CONFIG_DIR "${CMAKE_INSTALL_FULL_SYSCONFDIR}/aethercli" CACHE PATH "Diretório de configurações")
-set(AETHERCLI_CONFIG "${AETHERCLI_CONFIG_DIR}/commands.json" CACHE FILEPATH "Arquivo de configuração principal")
+set(AETHERCLI_CONFIG "${AETHERCLI_CONFIG_DIR}/config.json" CACHE FILEPATH "Arquivo de configuração principal")
 
 add_executable(aethercli ${SOURCES})
 target_compile_options(aethercli PRIVATE -Wall -Wextra)
@@ -70,8 +72,10 @@ target_compile_definitions(aethercli PRIVATE
 )
 
 # Regras de instalação — permissões explícitas: config editável só pelo dono
-# (quem edita commands.json define o que o shell executa).
+# (quem edita config.json define o que o shell executa).
 install(TARGETS aethercli RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+# Nome com prefixo no PATH do sistema para não colidir com adduser(8)
+install(PROGRAMS adduser.sh DESTINATION ${CMAKE_INSTALL_BINDIR} RENAME aethercli-adduser)
 install(DIRECTORY conf/ DESTINATION ${AETHERCLI_CONFIG_DIR}
     FILE_PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ
     DIRECTORY_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE
@@ -93,6 +97,7 @@ if(AETHERCLI_BUILD_TESTS)
         tests/test_completer.cpp
         tests/test_parser.cpp
         tests/test_macro.cpp
+        tests/test_auth.cpp
     )
     target_include_directories(aethercli_tests PRIVATE src)
     target_compile_options(aethercli_tests PRIVATE -Wall -Wextra)
