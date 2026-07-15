@@ -57,6 +57,7 @@ include(GNUInstallDirs)
 # Definir caminhos customizáveis
 set(AETHERCLI_CONFIG_DIR "${CMAKE_INSTALL_FULL_SYSCONFDIR}/aethercli" CACHE PATH "Diretório de configurações")
 set(AETHERCLI_CONFIG "${AETHERCLI_CONFIG_DIR}/config.json" CACHE FILEPATH "Arquivo de configuração principal")
+set(AETHERCLI_VAR_DIR "${CMAKE_INSTALL_FULL_LOCALSTATEDIR}/aethercli" CACHE PATH "Diretório de arquivos de estado/sessões")
 
 add_executable(aethercli ${SOURCES})
 target_compile_options(aethercli PRIVATE -Wall -Wextra)
@@ -68,6 +69,7 @@ target_link_libraries(aethercli PRIVATE
 # Passar caminhos e versão para o código-fonte
 target_compile_definitions(aethercli PRIVATE
     AETHERCLI_CONFIG="${AETHERCLI_CONFIG}"
+    AETHERCLI_VAR_DIR="${AETHERCLI_VAR_DIR}"
     AETHERCLI_VERSION="${PROJECT_VERSION}"
 )
 

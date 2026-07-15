@@ -91,3 +91,20 @@ TEST_CASE("parseConfig: 'subcommands' que não é array lança erro") {
     TempConfig cfg(R"({"commands": [{"name": "x", "subcommands": "oops"}]})");
     REQUIRE_THROWS(CommandParser::parseConfig(cfg.path()));
 }
+
+TEST_CASE("parseConfig: parse de restricted_session") {
+    TempConfig cfg1(R"({"commands": [{"name": "x"}], "restricted_session": true})");
+    auto config1 = CommandParser::parseConfig(cfg1.path());
+    REQUIRE(config1.restricted_session == true);
+
+    TempConfig cfg2(R"({"commands": [{"name": "x"}], "restricted_session": "true"})");
+    auto config2 = CommandParser::parseConfig(cfg2.path());
+    REQUIRE(config2.restricted_session == true);
+
+    TempConfig cfg3(R"({"commands": [{"name": "x"}], "restricted_session": false})");
+    auto config3 = CommandParser::parseConfig(cfg3.path());
+    REQUIRE(config3.restricted_session == false);
+
+    TempConfig cfg4(R"({"commands": [{"name": "x"}], "restricted_session": "invalid"})");
+    REQUIRE_THROWS(CommandParser::parseConfig(cfg4.path()));
+}

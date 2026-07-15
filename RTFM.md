@@ -25,7 +25,7 @@ With the prefix above, `make install` places:
 - Binary: `/usr/local/bin/aethercli`
 - Configuration: `/usr/local/etc/aethercli/` (`config.json`, language files, macros)
 
-The default configuration path is baked into the binary at build time (`AETHERCLI_CONFIG` CMake cache variable); override it at runtime with `-C <file>`.
+The default configuration path is baked into the binary at build time (`AETHERCLI_CONFIG` CMake cache variable); override it at runtime with `-C <file>`. You can also configure the default variable files path (used for session locks) via `-DAETHERCLI_VAR_DIR=/path/to/var` at compile time.
 
 > **Warning:** reinstalling copies `conf/` over the installed configuration directory, overwriting any local edits to `config.json`. Back it up first, or keep your customized config elsewhere and load it with `-C`.
 
@@ -182,10 +182,20 @@ In your JSON configuration file, set:
 {
   "require_authentication": true,
   "passwd-file": "/etc/aethercli/users.json",
-  "number_auth_fail": 3
+  "number_auth_fail": 3,
+  "restricted_session": true
 }
 ```
 If `passwd-file` is omitted, the system defaults to `users.json` in the configuration directory.
+
+### Session Restrictions
+If `restricted_session` is set to `true` (defaults to `false`), the system limits a user to a single concurrent session. It enforces this using POSIX file locks placed in a `sessions/` directory.
+
+The location of the session lock files is determined by the `AETHERCLI_VAR_DIR` CMake variable. At compile time, you can configure this location:
+```bash
+cmake -DAETHERCLI_VAR_DIR=/var/run/aethercli ..
+```
+If the macro isn't provided or is not found during compilation, the CLI falls back dynamically to a `var/sessions` directory located alongside the configuration directory (e.g., if config is in `./conf`, locks go to `./var/sessions`).
 
 ### User Database Format
 Users are stored in a JSON file (`users.json`):

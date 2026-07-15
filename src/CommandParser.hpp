@@ -30,6 +30,7 @@ struct Config {
     std::string motd;
     // Autenticação opcional: se true, exige login contra <configDir>/users.json.
     bool require_authentication = false;
+    bool restricted_session = false;
     int number_auth_fail = 3;
     std::string passwd_file;
 };
@@ -60,6 +61,13 @@ public:
             if (v.is_boolean()) config.require_authentication = v.get<bool>();
             else if (v.is_string() && (v == "true" || v == "false")) config.require_authentication = (v == "true");
             else throw std::runtime_error("Critical Error: 'require_authentication' must be \"true\" or \"false\" in " + filePath);
+        }
+
+        if (j.contains("restricted_session")) {
+            const auto& v = j["restricted_session"];
+            if (v.is_boolean()) config.restricted_session = v.get<bool>();
+            else if (v.is_string() && (v == "true" || v == "false")) config.restricted_session = (v == "true");
+            else throw std::runtime_error("Critical Error: 'restricted_session' must be \"true\" or \"false\" in " + filePath);
         }
 
         if (j.contains("number_auth_fail")) {

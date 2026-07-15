@@ -18,6 +18,7 @@
 #include <csignal>
 #include <sys/ioctl.h>
 #include <sys/stat.h>
+#include <fcntl.h>
 
 #include "CliUtils.hpp"
 #include "Completer.hpp"
@@ -45,6 +46,7 @@ enum class Context { GLOBAL, CONFIG };
 struct AppState {
     Context context = Context::GLOBAL;
     std::chrono::steady_clock::time_point last_tab_time;
+    int tab_count = 0;
 };
 
 constexpr int MAX_MACRO_DEPTH = 8;
@@ -308,7 +310,7 @@ bool executeCommand(const std::string& full_input, const std::vector<Command>& t
     return true;
 }
 
-void showOptions(const std::vector<Command>& tree, const std::string& current_input) {
+void showOptions(const std::vector<Command>& tree, const std::string& current_input, bool show_syntax = false) {
     auto tokens = split(current_input);
     bool endsWithSpace = !current_input.empty() && current_input.back() == ' ';
     std::string last_token = (tokens.empty() || endsWithSpace) ? "" : tokens.back();
@@ -345,7 +347,12 @@ void showOptions(const std::vector<Command>& tree, const std::string& current_in
         } else if (endsWithSpace) {
             std::cout << "\nSubcommands:" << std::endl;
             for (const auto& c : parent->subcommands) {
-                std::cout << "  " << std::left << std::setw(15) << c.name << " - " << c.short_desc << std::endl;
+                std::cout << "  " << std::left << std::setw(15) << c.name << " - ";
+                if (show_syntax && !c.syntax.empty()) {
+                    std::cout << c.syntax << std::endl;
+                } else {
+                    std::cout << c.short_desc << std::endl;
+                }
             }
             return;
         }
@@ -362,7 +369,12 @@ void showOptions(const std::vector<Command>& tree, const std::string& current_in
         return;
     }
     for (const auto* c : matches) {
-        std::cout << "  " << std::left << std::setw(15) << c->name << " - " << c->short_desc << std::endl;
+        std::cout << "  " << std::left << std::setw(15) << c->name << " - ";
+        if (show_syntax && !c->syntax.empty()) {
+            std::cout << c->syntax << std::endl;
+        } else {
+            std::cout << c->short_desc << std::endl;
+        }
     }
 }
 
@@ -598,9 +610,19 @@ void runInteractive(const std::vector<Command>& commands, const std::string& lan
             auto diff = std::chrono::duration_cast<std::chrono::milliseconds>(now - state.last_tab_time).count();
             state.last_tab_time = now;
 
-            if (diff < 500) { // Double tab: lista as opções
+            if (diff < 500) {
+                state.tab_count++;
+            } else {
+                state.tab_count = 1;
+            }
+
+            if (state.tab_count == 2) { // Double tab: lista as opções
                 std::cout << std::endl;
-                showOptions(commands, buffer);
+                showOptions(commands, buffer, false);
+                last_printed_rows = 0;
+            } else if (state.tab_count >= 3) { // Triple tab: lista as opções com sintaxe
+                std::cout << std::endl;
+                showOptions(commands, buffer, true);
                 last_printed_rows = 0;
             } else {
                 // Completa a partir do texto ANTES do cursor (não do buffer todo).
@@ -643,7 +665,7 @@ void runInteractive(const std::vector<Command>& commands, const std::string& lan
         } else if (c == '?' && std::count(buffer.begin(), buffer.end(), '\"') % 2 == 0) {
             // '?' dentro de aspas abertas é literal; fora delas, ajuda imediata.
             std::cout << std::endl;
-            showOptions(commands, buffer);
+            showOptions(commands, buffer, false);
             last_printed_rows = 0;
         } else if (isprint((unsigned char)c) || (c & 0x80)) {
             if (buffer.length() < MAX_CHARS) {
@@ -772,6 +794,28 @@ int main(int argc, char* argv[]) {
                 }
                 std::string password = Auth::readHiddenLine("Password: ");
                 if (Auth::verify(users, username, password, pepper)) {
+                    if (config.restricted_session) {
+#ifdef AETHERCLI_VAR_DIR
+                        std::string sessionDir = std::string(AETHERCLI_VAR_DIR) + "/sessions";
+#else
+                        std::string sessionDir = (fs::path(configDir).parent_path() / "var" / "sessions").string();
+#endif
+                        fs::create_directories(sessionDir);
+                        std::string lockFile = sessionDir + "/" + username + ".lock";
+                        int fd = open(lockFile.c_str(), O_CREAT | O_RDWR, 0600);
+                        if (fd >= 0) {
+                            struct flock fl{};
+                            fl.l_type = F_WRLCK;
+                            fl.l_whence = SEEK_SET;
+                            fl.l_start = 0;
+                            fl.l_len = 0;
+                            if (fcntl(fd, F_SETLK, &fl) == -1) {
+                                std::cout << "%% Error: User '" << username << "' already has an active session." << std::endl;
+                                close(fd);
+                                continue;
+                            }
+                        }
+                    }
                     g_current_user = username;
                     Logger::info(g_current_user + ": logged in");
                     break;
