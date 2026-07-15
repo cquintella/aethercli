@@ -112,9 +112,40 @@ public:
     }
 };
 
+void printVtyError(const std::string& input, size_t token_index, const std::string& prompt, const std::string& message) {
+    size_t char_idx = 0;
+    size_t current_token = 0;
+    bool in_token = false;
+    for (size_t i = 0; i < input.length(); ++i) {
+        if (input[i] != ' ' && input[i] != '\t') {
+            if (!in_token) {
+                if (current_token == token_index) { char_idx = i; break; }
+                in_token = true;
+            }
+        } else {
+            if (in_token) {
+                current_token++;
+                in_token = false;
+            }
+        }
+    }
+    if (char_idx == 0 && token_index > 0) char_idx = input.length();
+
+    std::cout << "\n";
+    if (prompt.empty()) {
+        std::cout << "  " << input << "\n";
+        std::cout << "  " << std::string(cli::util::displayWidth(input.substr(0, char_idx)), ' ') << "^\n";
+    } else {
+        size_t prompt_w = cli::util::displayWidth(prompt);
+        size_t input_w = cli::util::displayWidth(input.substr(0, char_idx));
+        std::cout << std::string(prompt_w + input_w, ' ') << "^\n";
+    }
+    std::cout << message << std::endl;
+}
+
 bool executeCommand(const std::string& full_input, const std::vector<Command>& tree,
                     LocalizationManager& lang, Context& ctx, const std::string& configDir,
-                    int macro_depth = 0) {
+                    int macro_depth = 0, const std::string& prompt = "") {
     if (full_input.length() > 4096) {
         std::cout << "%% Error: Command line exceeds maximum allowed length (4096 characters)." << std::endl;
         return true;
@@ -136,11 +167,11 @@ bool executeCommand(const std::string& full_input, const std::vector<Command>& t
 
     auto res = cli::completer::resolve(tree, tokens);
     if (res.ambiguous) {
-        std::cout << "\n% Ambiguous command: \"" << res.ambiguous_token << "\"" << std::endl;
+        printVtyError(full_input, res.depth, prompt, "% Ambiguous command: \"" + res.ambiguous_token + "\"");
         return true;
     }
     if (!res.cmd) {
-        std::cout << "\n" << lang.get("unknown_cmd") << full_input << std::endl;
+        printVtyError(full_input, res.depth, prompt, "% Invalid input detected at '^' marker.");
         return true;
     }
 
@@ -151,12 +182,8 @@ bool executeCommand(const std::string& full_input, const std::vector<Command>& t
         if (!cmd.subcommands.empty()) {
             if (depth == tokens.size()) {
                 std::cout << "\n% Incomplete command." << std::endl;
-                std::cout << "\nAvailable subcommands:" << std::endl;
-                for (const auto& c : cmd.subcommands) {
-                    std::cout << "  " << std::left << std::setw(15) << c.name << " - " << c.short_desc << std::endl;
-                }
             } else {
-                std::cout << "\n" << lang.get("unknown_cmd") << full_input << std::endl;
+                printVtyError(full_input, depth, prompt, "% Invalid input detected at '^' marker.");
             }
         } else {
             std::cout << "\n% Command '" << cmd.name << "' has no action configured." << std::endl;
@@ -191,7 +218,7 @@ bool executeCommand(const std::string& full_input, const std::vector<Command>& t
             return true;
         }
         for (const auto& mCmd : *macroCommands) {
-            executeCommand(mCmd, tree, lang, ctx, configDir, macro_depth + 1);
+            executeCommand(mCmd, tree, lang, ctx, configDir, macro_depth + 1, "");
         }
         return true;
     }
@@ -252,7 +279,7 @@ bool executeCommand(const std::string& full_input, const std::vector<Command>& t
             std::string reply;
             if (std::getline(std::cin, reply) &&
                 (reply == "y" || reply == "Y" || reply == "yes" || reply == "s" || reply == "sim")) {
-                return executeCommand(suggestion, tree, lang, ctx, configDir, macro_depth);
+                return executeCommand(suggestion, tree, lang, ctx, configDir, macro_depth, prompt);
             }
         } else {
             std::cout << "% (suggestion not executed: no interactive confirmation available)" << std::endl;
@@ -333,21 +360,16 @@ void showOptions(const std::vector<Command>& tree, const std::string& current_in
     }
 
     if (parent && (endsWithSpace || parent->subcommands.empty())) {
-        std::cout << "\nDetails for '" << parent->name << "':" << std::endl;
-        std::cout << "  Description: " << parent->short_desc << std::endl;
-        if (!parent->syntax.empty()) {
-            std::cout << "  Syntax:      " << parent->syntax << std::endl;
-        }
-
         if (parent->subcommands.empty()) {
             if (parent->allow_args) {
-                std::cout << "  (Accepts additional arguments)" << std::endl;
+                std::cout << "  <cr>\n";
+            } else {
+                std::cout << "  <cr>\n";
             }
             return;
         } else if (endsWithSpace) {
-            std::cout << "\nSubcommands:" << std::endl;
             for (const auto& c : parent->subcommands) {
-                std::cout << "  " << std::left << std::setw(15) << c.name << " - ";
+                std::cout << "  " << std::left << std::setw(15) << c.name << " ";
                 if (show_syntax && !c.syntax.empty()) {
                     std::cout << c.syntax << std::endl;
                 } else {
@@ -359,17 +381,12 @@ void showOptions(const std::vector<Command>& tree, const std::string& current_in
     }
 
     auto matches = cli::completer::prefixMatches(*current_level, last_token);
-    std::cout << "\nAvailable options:" << std::endl;
     if (matches.empty()) {
-        if (parent && parent->subcommands.empty()) {
-            std::cout << "  (No more options for this command)" << std::endl;
-        } else {
-            std::cout << "  (No matches found)" << std::endl;
-        }
+        std::cout << "% Unrecognized command" << std::endl;
         return;
     }
     for (const auto* c : matches) {
-        std::cout << "  " << std::left << std::setw(15) << c->name << " - ";
+        std::cout << "  " << std::left << std::setw(15) << c->name << " ";
         if (show_syntax && !c->syntax.empty()) {
             std::cout << c->syntax << std::endl;
         } else {
@@ -442,14 +459,13 @@ void runInteractive(const std::vector<Command>& commands, const std::string& lan
         std::string full_text = prompt + buffer;
         std::cout << full_text;
 
-        // Largura em colunas (codepoints), não em bytes — senão acentos
-        // desalinham o cursor.
+        // Largura em colunas (codepoints e full-width CJK).
         int total_width = (int)displayWidth(full_text);
-        last_printed_rows = total_width / cols;
+        last_printed_rows = (total_width > 0 && total_width % cols == 0) ? (total_width / cols) - 1 : (total_width / cols);
 
         int cur_width = (int)(displayWidth(prompt) + displayWidth(buffer, cursor_pos));
-        int target_row = cur_width / cols;
-        int target_col = cur_width % cols;
+        int target_row = (cur_width > 0 && cur_width % cols == 0) ? (cur_width / cols) - 1 : (cur_width / cols);
+        int target_col = (cur_width > 0 && cur_width % cols == 0) ? cols : (cur_width % cols);
 
         int move_up = last_printed_rows - target_row;
         if (move_up > 0) {
@@ -499,7 +515,7 @@ void runInteractive(const std::vector<Command>& commands, const std::string& lan
                 history_index = -1;
                 bool keep_running = true;
                 try {
-                    keep_running = executeCommand(buffer, commands, lang, state.context, configDir);
+                    keep_running = executeCommand(buffer, commands, lang, state.context, configDir, 0, prompt);
                 } catch (const std::exception& e) {
                     std::cout << "%% Internal error: " << e.what() << std::endl;
                 }

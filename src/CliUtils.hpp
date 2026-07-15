@@ -113,13 +113,53 @@ inline size_t utf8Next(const std::string& s, size_t pos) {
     return pos;
 }
 
-// Largura de exibição aproximada: 1 coluna por codepoint (caracteres
-// full-width CJK não são tratados).
+inline int getCodepoint(const std::string& s, size_t& i) {
+    if (i >= s.size()) return 0;
+    unsigned char c = s[i];
+    int cp = 0;
+    int len = 0;
+    if (c < 0x80) { cp = c; len = 1; }
+    else if ((c & 0xE0) == 0xC0) { cp = c & 0x1F; len = 2; }
+    else if ((c & 0xF0) == 0xE0) { cp = c & 0x0F; len = 3; }
+    else if ((c & 0xF8) == 0xF0) { cp = c & 0x07; len = 4; }
+    else { len = 1; cp = 0xFFFD; }
+    
+    for (int j = 1; j < len; ++j) {
+        if (i + j < s.size() && isUtf8Continuation((unsigned char)s[i + j])) {
+            cp = (cp << 6) | (s[i + j] & 0x3F);
+        } else {
+            cp = 0xFFFD;
+            break;
+        }
+    }
+    i += len;
+    return cp;
+}
+
+inline bool isFullWidth(int cp) {
+    if (cp < 0x1100) return false;
+    return (cp >= 0x1100 && cp <= 0x115F) ||
+           (cp == 0x2329 || cp == 0x232A) ||
+           (cp >= 0x2E80 && cp <= 0xA4CF && cp != 0x303F) ||
+           (cp >= 0xAC00 && cp <= 0xD7A3) ||
+           (cp >= 0xF900 && cp <= 0xFAFF) ||
+           (cp >= 0xFE10 && cp <= 0xFE19) ||
+           (cp >= 0xFE30 && cp <= 0xFE6F) ||
+           (cp >= 0xFF00 && cp <= 0xFF60) ||
+           (cp >= 0xFFE0 && cp <= 0xFFE6) ||
+           (cp >= 0x20000 && cp <= 0x2FFFD) ||
+           (cp >= 0x30000 && cp <= 0x3FFFD);
+}
+
+// Largura de exibição precisa: 1 coluna por codepoint comum, 2 para full-width CJK.
 inline size_t displayWidth(const std::string& s, size_t end = std::string::npos) {
     size_t n = std::min(end, s.size());
     size_t w = 0;
-    for (size_t i = 0; i < n; ++i) {
-        if (!isUtf8Continuation((unsigned char)s[i])) ++w;
+    size_t i = 0;
+    while (i < n) {
+        int cp = getCodepoint(s, i);
+        if (cp == 0) continue;
+        w += isFullWidth(cp) ? 2 : 1;
     }
     return w;
 }
