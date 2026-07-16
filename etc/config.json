@@ -81,6 +81,12 @@
           "short_desc": "Listar usuários configurados",
           "activation": "${AETHERCLI_SCRIPTS_DIR}/configure-terminal-list-users.sh",
           "syntax": "list users"
+        },
+        {
+          "name": "commands",
+          "short_desc": "Listar comandos dinâmicos",
+          "activation": "${AETHERCLI_SCRIPTS_DIR}/configure-terminal-list-commands.sh",
+          "syntax": "list commands"
         }
       ]
     },
@@ -150,24 +156,6 @@
       "activation": "internal:ai",
       "syntax": "ai <pergunta em linguagem natural>",
       "args": "append"
-    },
-    {
-      "name": "iris",
-      "short_desc": "Íris — assistente local",
-      "subcommands": [
-        {
-          "name": "face",
-          "short_desc": "Abrir o rosto da Íris no browser",
-          "activation": "open \"${IRIS_FACE_URL:-http://localhost:8090}\"",
-          "syntax": "iris face"
-        },
-        {
-          "name": "status",
-          "short_desc": "Ver se o rosto da Íris responde",
-          "activation": "curl -s -o /dev/null -w 'face: HTTP %{http_code}\\n' --max-time 3 http://localhost:8090/ || echo 'face: fora do ar'",
-          "syntax": "iris status"
-        }
-      ]
     },
     {
       "name": "reload",

@@ -1,6 +1,18 @@
 #!/bin/bash
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CONFIG_FILE="$DIR/config.json"
+GLOBAL_CONFIG="$DIR/config.json"
+USER_CONFIG_DIR="$HOME/.aethercli"
+CONFIG_FILE="$USER_CONFIG_DIR/config.json"
+
+mkdir -p "$USER_CONFIG_DIR"
+if [ ! -f "$CONFIG_FILE" ]; then
+    if [ -f "$GLOBAL_CONFIG" ]; then
+        cp "$GLOBAL_CONFIG" "$CONFIG_FILE"
+    else
+        echo "Error: config.json not found."
+        exit 1
+    fi
+fi
 LANG_FILE="$DIR/lang_${AETHERCLI_LANG:-en}.json"
 
 get_msg() {

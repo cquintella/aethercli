@@ -1,6 +1,18 @@
 #!/bin/bash
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CONFIG_FILE="$DIR/config.json"
+GLOBAL_CONFIG="$DIR/config.json"
+USER_CONFIG_DIR="$HOME/.aethercli"
+CONFIG_FILE="$USER_CONFIG_DIR/config.json"
+
+mkdir -p "$USER_CONFIG_DIR"
+if [ ! -f "$CONFIG_FILE" ]; then
+    if [ -f "$GLOBAL_CONFIG" ]; then
+        cp "$GLOBAL_CONFIG" "$CONFIG_FILE"
+    else
+        echo "Error: config.json not found."
+        exit 1
+    fi
+fi
 LANG_FILE="$DIR/lang_${AETHERCLI_LANG:-en}.json"
 
 get_msg() {
@@ -16,6 +28,7 @@ get_msg() {
 if [ "$#" -lt 3 ]; then
     get_msg "script_add_cmd_usage" "Usage: add command <parent_path> <name> <short_desc> [activation] [syntax]"
     echo "  Use / for root level. Use quotes if arguments contain spaces."
+    echo "  Example: add command /show \"disk\" \"Show disk usage\" \"df -h\" \"show disk\""
     exit 1
 fi
 

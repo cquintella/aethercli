@@ -827,12 +827,19 @@ int main(int argc, char* argv[]) {
     }
 
     Config config;
-    if (!fs::exists(configFile)) {
-        std::cerr << "% Warning: configuration file not found: " << configFile << std::endl;
+    std::string loadFile = configFile;
+    const char* home = getenv("HOME");
+    if (home) {
+        std::string userConf = std::string(home) + "/.aethercli/config.json";
+        if (fs::exists(userConf)) loadFile = userConf;
+    }
+
+    if (!fs::exists(loadFile)) {
+        std::cerr << "% Warning: configuration file not found: " << loadFile << std::endl;
         std::cerr << "% Starting with an empty command set. Use -C <file> to load a configuration." << std::endl;
     } else {
         try {
-            config = CommandParser::parseConfig(configFile);
+            config = CommandParser::parseConfig(loadFile);
             if (!langOverride && !config.language.empty()) {
                 langSource = config.language;
             }
@@ -950,7 +957,13 @@ int main(int argc, char* argv[]) {
                     break; // Sai do loop se runInteractive retornar normalmente (exit)
                 } catch (const ReloadException&) {
                     try {
-                        config = CommandParser::parseConfig(configFile);
+                        std::string rLoadFile = configFile;
+                        const char* rHome = getenv("HOME");
+                        if (rHome) {
+                            std::string userConf = std::string(rHome) + "/.aethercli/config.json";
+                            if (fs::exists(userConf)) rLoadFile = userConf;
+                        }
+                        config = CommandParser::parseConfig(rLoadFile);
                         if (!langOverride && !config.language.empty()) {
                             langSource = config.language;
                         }
