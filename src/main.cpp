@@ -30,6 +30,7 @@
 #include "Logger.hpp"
 #include "LocalizationManager.hpp"
 #include "Common.hpp"
+#include "SystemStats.hpp"
 
 namespace fs = std::filesystem;
 using namespace cli::util;
@@ -143,6 +144,11 @@ void printVtyError(const std::string& input, size_t token_index, const std::stri
     std::cout << message << std::endl;
 }
 
+class ReloadException : public std::exception {
+public:
+    const char* what() const noexcept override { return "Reload Configuration"; }
+};
+
 bool executeCommand(const std::string& full_input, const std::vector<Command>& tree,
                     LocalizationManager& lang, Context& ctx, const std::string& configDir,
                     int macro_depth = 0, const std::string& prompt = "") {
@@ -239,6 +245,11 @@ bool executeCommand(const std::string& full_input, const std::vector<Command>& t
         }
         if (!found) std::cout << "  (No macro files found)" << std::endl;
         return true;
+    }
+
+    if (cmd.activation == "internal:reload") {
+        std::cout << "\n% " << lang.getOr("reloading_conf", "Reloading configuration...") << std::endl;
+        throw ReloadException();
     }
 
     if (cmd.activation == "internal:ai") {
@@ -395,7 +406,7 @@ void showOptions(const std::vector<Command>& tree, const std::string& current_in
     }
 }
 
-void runInteractive(const std::vector<Command>& commands, const std::string& langSource, const std::string& configDir, const std::string& motd) {
+void runInteractive(const std::vector<Command>& commands, const std::string& langSource, const std::string& configDir, const std::string& motd, bool status_bar_enabled = false) {
     LocalizationManager lang;
     lang.loadLanguage(langSource, configDir);
 
@@ -443,7 +454,7 @@ void runInteractive(const std::vector<Command>& commands, const std::string& lan
 
     RawMode raw;
 
-    auto redraw = [&](const std::string& prompt) {
+    auto redraw = [&](const std::string& prompt, const std::string& status_bar_text = "") {
         struct winsize w {};
         int cols = 80;
         if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &w) == 0 && w.ws_col > 0) cols = w.ws_col;
@@ -467,6 +478,18 @@ void runInteractive(const std::vector<Command>& commands, const std::string& lan
         int target_row = (cur_width > 0 && cur_width % cols == 0) ? (cur_width / cols) - 1 : (cur_width / cols);
         int target_col = (cur_width > 0 && cur_width % cols == 0) ? cols : (cur_width % cols);
 
+        if (status_bar_enabled && !status_bar_text.empty() && w.ws_row > 1) {
+            std::cout << "\033[s"; // Save cursor
+            std::cout << "\033[" << w.ws_row << ";1H"; // Move to bottom
+            std::cout << "\033[7m"; // Reverse video
+            std::string padded = status_bar_text;
+            if (padded.length() < static_cast<size_t>(cols)) padded.append(cols - padded.length(), ' ');
+            else if (padded.length() > static_cast<size_t>(cols)) padded = padded.substr(0, cols);
+            std::cout << padded;
+            std::cout << "\033[0m"; // Reset format
+            std::cout << "\033[u"; // Restore cursor
+        }
+
         int move_up = last_printed_rows - target_row;
         if (move_up > 0) {
             std::cout << "\033[" << move_up << "A";
@@ -480,9 +503,39 @@ void runInteractive(const std::vector<Command>& commands, const std::string& lan
         std::cout << std::flush;
     };
 
+    if (status_bar_enabled) {
+        struct winsize w {};
+        if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &w) == 0 && w.ws_row > 1) {
+            std::cout << "\033[1;" << w.ws_row - 1 << "r"; // Set scrolling region
+        }
+    }
+
+    auto last_status_update = std::chrono::steady_clock::now();
+    std::string cached_status_bar;
+
+    auto updateStatusBar = [&]() -> bool {
+        if (!status_bar_enabled) return false;
+        auto now = std::chrono::steady_clock::now();
+        if (cached_status_bar.empty() || std::chrono::duration_cast<std::chrono::seconds>(now - last_status_update).count() >= 3) {
+            last_status_update = now;
+            char time_buf[64];
+            std::time_t t = std::time(nullptr);
+            std::strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S", std::localtime(&t));
+            
+            int cpu = (int)cli::system::SystemStats::getCPUUsage();
+            int mem = (int)cli::system::SystemStats::getMemoryUsage();
+            cached_status_bar = " CPU: " + std::to_string(cpu) + "% | Mem: " + std::to_string(mem) + "% | Time: " + time_buf;
+            return true;
+        }
+        return false;
+    };
+
     while (true) {
         std::string prompt = (state.context == Context::CONFIG) ? "aethercli(config)# " : "aethercli# ";
-        redraw(prompt);
+        
+        updateStatusBar();
+        
+        redraw(prompt, cached_status_bar);
 
         char c;
         ssize_t n = read(STDIN_FILENO, &c, 1);
@@ -490,6 +543,11 @@ void runInteractive(const std::vector<Command>& commands, const std::string& lan
             if (n < 0 && errno == EINTR) continue;
             if (n == 0 && isatty(STDIN_FILENO)) { // timeout do VTIME
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                
+                if (updateStatusBar()) {
+                    redraw(prompt, cached_status_bar);
+                }
+                
                 continue;
             }
             break; // EOF (stdin redirecionado) ou erro de leitura
@@ -516,6 +574,8 @@ void runInteractive(const std::vector<Command>& commands, const std::string& lan
                 bool keep_running = true;
                 try {
                     keep_running = executeCommand(buffer, commands, lang, state.context, configDir, 0, prompt);
+                } catch (const ReloadException&) {
+                    throw; // allow outer loop to handle reload
                 } catch (const std::exception& e) {
                     std::cout << "%% Internal error: " << e.what() << std::endl;
                 }
@@ -718,7 +778,7 @@ int main(int argc, char* argv[]) {
     std::string langSource = "en", configFile = AETHERCLI_CONFIG, target = "";
     bool headless = false, enableLog = false;
     std::string logPath = "", adduserName = "";
-
+    bool langOverride = false;
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "-h" || arg == "--help") {
@@ -740,6 +800,7 @@ int main(int argc, char* argv[]) {
             configFile = argv[++i];
         } else if ((arg == "-l" || arg == "--lang_file") && i + 1 < argc) {
             langSource = argv[++i];
+            langOverride = true;
         } else if (arg == "-p" && i + 1 < argc) {
             headless = true;
             target = argv[++i];
@@ -767,21 +828,49 @@ int main(int argc, char* argv[]) {
 
     Config config;
     if (!fs::exists(configFile)) {
-        // Config ausente não é fatal: avisa e abre o shell com árvore vazia,
-        // para o usuário poder digitar comandos (exit/?) e ver o aviso.
         std::cerr << "% Warning: configuration file not found: " << configFile << std::endl;
         std::cerr << "% Starting with an empty command set. Use -C <file> to load a configuration." << std::endl;
     } else {
         try {
             config = CommandParser::parseConfig(configFile);
+            if (!langOverride && !config.language.empty()) {
+                langSource = config.language;
+            }
+
+            const char* home = getenv("HOME");
+            if (home) {
+                std::string userDir = std::string(home) + "/.aethercli";
+                std::ifstream lfile(userDir + "/language");
+                if (lfile.is_open()) {
+                    std::string l;
+                    if (lfile >> l && !l.empty()) {
+                        langSource = l;
+                    }
+                }
+                std::ifstream sfile(userDir + "/statusbar");
+                if (sfile.is_open()) {
+                    std::string s;
+                    if (sfile >> s) {
+                        config.status_bar = (s == "true");
+                    }
+                }
+            }
         } catch (const std::exception& e) {
             std::cerr << e.what() << std::endl;
             return 1;
         }
     }
 
+    setenv("AETHERCLI_LANG", langSource.c_str(), 1);
+
     try {
         std::string configDir = fs::absolute(fs::path(configFile)).parent_path().string();
+
+        std::string actualScriptsDir = config.scripts_dir;
+        if (!actualScriptsDir.empty() && actualScriptsDir[0] != '/') {
+            actualScriptsDir = configDir + "/" + actualScriptsDir;
+        }
+        setenv("AETHERCLI_SCRIPTS_DIR", actualScriptsDir.c_str(), 1);
 
         // Login antes de qualquer execução (interativa ou headless): fail closed.
         if (config.require_authentication) {
@@ -855,7 +944,47 @@ int main(int argc, char* argv[]) {
             Context dummy = Context::GLOBAL;
             executeCommand(target, config.commands, lang, dummy, configDir);
         } else {
-            runInteractive(config.commands, langSource, configDir, config.motd);
+            while (true) {
+                try {
+                    runInteractive(config.commands, langSource, configDir, config.motd, config.status_bar);
+                    break; // Sai do loop se runInteractive retornar normalmente (exit)
+                } catch (const ReloadException&) {
+                    try {
+                        config = CommandParser::parseConfig(configFile);
+                        if (!langOverride && !config.language.empty()) {
+                            langSource = config.language;
+                        }
+                        const char* home = getenv("HOME");
+                        if (home) {
+                            std::string userDir = std::string(home) + "/.aethercli";
+                            std::ifstream lfile(userDir + "/language");
+                            if (lfile.is_open()) {
+                                std::string l;
+                                if (lfile >> l && !l.empty()) {
+                                    langSource = l;
+                                }
+                            }
+                            std::ifstream sfile(userDir + "/statusbar");
+                            if (sfile.is_open()) {
+                                std::string s;
+                                if (sfile >> s) {
+                                    config.status_bar = (s == "true");
+                                }
+                            }
+                        }
+                        setenv("AETHERCLI_LANG", langSource.c_str(), 1);
+
+                        std::string actualScriptsDir = config.scripts_dir;
+                        if (!actualScriptsDir.empty() && actualScriptsDir[0] != '/') {
+                            actualScriptsDir = configDir + "/" + actualScriptsDir;
+                        }
+                        setenv("AETHERCLI_SCRIPTS_DIR", actualScriptsDir.c_str(), 1);
+                    } catch (const std::exception& ce) {
+                        std::cerr << "Fatal Error on reload: " << ce.what() << std::endl;
+                        return 1;
+                    }
+                }
+            }
         }
     } catch (const std::exception& e) {
         // O unwinding até aqui já executou o destrutor do RawMode e restaurou

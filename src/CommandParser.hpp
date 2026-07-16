@@ -33,6 +33,9 @@ struct Config {
     bool restricted_session = false;
     int number_auth_fail = 3;
     std::string passwd_file;
+    bool status_bar = false;
+    std::string language = "en";
+    std::string scripts_dir = "scripts";
 };
 
 class CommandParser {
@@ -52,23 +55,25 @@ public:
 
         Config config;
         
+        if (j.contains("scripts_dir") && j["scripts_dir"].is_string()) {
+            config.scripts_dir = j["scripts_dir"];
+        }
+
         if (j.contains("motd") && j["motd"].is_string()) {
             config.motd = j["motd"];
         }
 
-        if (j.contains("require_authentication")) {
-            const auto& v = j["require_authentication"];
-            if (v.is_boolean()) config.require_authentication = v.get<bool>();
-            else if (v.is_string() && (v == "true" || v == "false")) config.require_authentication = (v == "true");
-            else throw std::runtime_error("Critical Error: 'require_authentication' must be \"true\" or \"false\" in " + filePath);
-        }
+        auto parseBool = [&](const std::string& key, bool& out_val) {
+            if (j.contains(key)) {
+                const auto& v = j[key];
+                if (v.is_boolean()) out_val = v.get<bool>();
+                else if (v.is_string() && (v == "true" || v == "false")) out_val = (v == "true");
+                else throw std::runtime_error("Critical Error: '" + key + "' must be \"true\" or \"false\" in " + filePath);
+            }
+        };
 
-        if (j.contains("restricted_session")) {
-            const auto& v = j["restricted_session"];
-            if (v.is_boolean()) config.restricted_session = v.get<bool>();
-            else if (v.is_string() && (v == "true" || v == "false")) config.restricted_session = (v == "true");
-            else throw std::runtime_error("Critical Error: 'restricted_session' must be \"true\" or \"false\" in " + filePath);
-        }
+        parseBool("require_authentication", config.require_authentication);
+        parseBool("restricted_session", config.restricted_session);
 
         if (j.contains("number_auth_fail")) {
             const auto& v = j["number_auth_fail"];
@@ -85,6 +90,14 @@ public:
             const auto& v = j["passwd-file"];
             if (!v.is_string()) throw std::runtime_error("Critical Error: 'passwd-file' must be a string in " + filePath);
             config.passwd_file = v.get<std::string>();
+        }
+
+        parseBool("status_bar", config.status_bar);
+
+        if (j.contains("language")) {
+            const auto& v = j["language"];
+            if (!v.is_string()) throw std::runtime_error("Critical Error: 'language' must be a string in " + filePath);
+            config.language = v.get<std::string>();
         }
 
         if (!j.contains("commands")) {

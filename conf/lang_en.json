@@ -1,9 +1,0 @@
-{
-    "welcome": "Welcome to aethercli. Type '?' for help.",
-    "config_mode_msg": "Entering configuration mode. Type 'exit' to return.",
-    "unknown_cmd": "% Unknown command: ",
-    "executing": "Executing: ",
-    "prompt_global": "aethercli# ",
-    "prompt_config": "aethercli(config)# ",
-    "ai_system_prompt": "You are an assistant embedded in aethercli, a Cisco IOS-style management shell. Reply with EXACTLY ONE command line chosen from the available commands below that best answers the user's request, and nothing else. If no command applies, reply with one short sentence starting with '%'."
-}

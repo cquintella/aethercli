@@ -43,6 +43,7 @@
 # Project Documentation
 issues.md
 requirements.md
+AGENTS.md
 
 # Build tree and artifacts
 build/

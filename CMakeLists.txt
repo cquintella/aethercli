@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.14)
-project(aethercli VERSION 0.4.0)
+project(aethercli VERSION 0.5.0)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -76,10 +76,14 @@ target_compile_definitions(aethercli PRIVATE
 # Regras de instalação — permissões explícitas: config editável só pelo dono
 # (quem edita config.json define o que o shell executa).
 install(TARGETS aethercli RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-# Nome com prefixo no PATH do sistema para não colidir com adduser(8)
-install(PROGRAMS adduser.sh DESTINATION ${CMAKE_INSTALL_BINDIR} RENAME aethercli-adduser)
-install(DIRECTORY conf/ DESTINATION ${AETHERCLI_CONFIG_DIR}
+install(DIRECTORY etc/ DESTINATION ${AETHERCLI_CONFIG_DIR}
     FILE_PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ
+    DIRECTORY_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE
+                          GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
+    PATTERN "scripts" EXCLUDE
+)
+install(DIRECTORY etc/scripts/ DESTINATION ${AETHERCLI_CONFIG_DIR}/scripts
+    FILE_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
     DIRECTORY_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE
                           GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
 )
